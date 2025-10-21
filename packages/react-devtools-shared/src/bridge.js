@@ -65,12 +65,6 @@ export const BRIDGE_PROTOCOL: Array<BridgeProtocol> = [
   {
     version: 2,
     minNpmVersion: '4.22.0',
-    maxNpmVersion: '6.2.0',
-  },
-  // Version 3 adds supports-toggling-suspense bit to add-root
-  {
-    version: 3,
-    minNpmVersion: '6.2.0',
     maxNpmVersion: null,
   },
 ];
@@ -91,6 +85,16 @@ type HighlightHostInstance = {
   hideAfterTimeout: boolean,
   openBuiltinElementsPanel: boolean,
   scrollIntoView: boolean,
+};
+type HighlightHostInstances = {
+  elements: Array<ElementAndRendererID>,
+  displayName: string | null,
+  hideAfterTimeout: boolean,
+  scrollIntoView: boolean,
+};
+
+type ScrollToHostInstance = {
+  ...ElementAndRendererID,
 };
 
 type OverrideValue = {
@@ -141,8 +145,6 @@ type OverrideSuspense = {
 };
 
 type OverrideSuspenseMilestone = {
-  rendererID: number,
-  rootID: number,
   suspendedSet: Array<number>,
 };
 
@@ -161,6 +163,13 @@ type InspectElementParams = {
   forceFullData: boolean,
   path: Array<number | string> | null,
   requestID: number,
+};
+
+type InspectScreenParams = {
+  requestID: number,
+  id: number,
+  forceFullData: boolean,
+  path: Array<number | string> | null,
 };
 
 type StoreAsGlobalParams = {
@@ -195,6 +204,7 @@ export type BackendEvents = {
   fastRefreshScheduled: [],
   getSavedPreferences: [],
   inspectedElement: [InspectedElementPayload],
+  inspectedScreen: [InspectedElementPayload],
   isReloadAndProfileSupportedByBackend: [boolean],
   operations: [Array<number>],
   ownersList: [OwnersList],
@@ -207,9 +217,14 @@ export type BackendEvents = {
   selectElement: [number],
   shutdown: [],
   stopInspectingHost: [boolean],
-  syncSelectionFromBuiltinElementsPanel: [],
   syncSelectionToBuiltinElementsPanel: [],
   unsupportedRendererVersion: [],
+
+  extensionComponentsPanelShown: [],
+  extensionComponentsPanelHidden: [],
+
+  resumeElementPolling: [],
+  pauseElementPolling: [],
 
   // React Native style editor plug-in.
   isNativeStyleEditorSupported: [
@@ -230,8 +245,6 @@ type FrontendEvents = {
   clearWarningsForElementID: [ElementAndRendererID],
   copyElementPath: [CopyElementPathParams],
   deletePath: [DeletePath],
-  extensionComponentsPanelShown: [],
-  extensionComponentsPanelHidden: [],
   getBackendVersion: [],
   getBridgeProtocol: [],
   getIfHasUnsupportedRendererVersion: [],
@@ -239,7 +252,9 @@ type FrontendEvents = {
   getProfilingData: [{rendererID: RendererID}],
   getProfilingStatus: [],
   highlightHostInstance: [HighlightHostInstance],
+  highlightHostInstances: [HighlightHostInstances],
   inspectElement: [InspectElementParams],
+  inspectScreen: [InspectScreenParams],
   logElementToConsole: [ElementAndRendererID],
   overrideError: [OverrideError],
   overrideSuspense: [OverrideSuspense],
@@ -251,9 +266,10 @@ type FrontendEvents = {
   savedPreferences: [SavedPreferencesParams],
   setTraceUpdatesEnabled: [boolean],
   shutdown: [],
-  startInspectingHost: [],
+  startInspectingHost: [boolean],
   startProfiling: [StartProfilingParams],
-  stopInspectingHost: [boolean],
+  stopInspectingHost: [],
+  scrollToHostInstance: [ScrollToHostInstance],
   stopProfiling: [],
   storeAsGlobal: [StoreAsGlobalParams],
   updateComponentFilters: [Array<ComponentFilter>],
@@ -261,6 +277,8 @@ type FrontendEvents = {
   updateHookSettings: [$ReadOnly<DevToolsHookSettings>],
   viewAttributeSource: [ViewAttributeSourceParams],
   viewElementSource: [ElementAndRendererID],
+
+  syncSelectionFromBuiltinElementsPanel: [],
 
   // React Native style editor plug-in.
   NativeStyleEditor_measure: [ElementAndRendererID],
@@ -282,19 +300,13 @@ type FrontendEvents = {
   overrideProps: [OverrideValue],
   overrideState: [OverrideValue],
 
-  resumeElementPolling: [],
-  pauseElementPolling: [],
-
   getHookSettings: [],
 };
 
 class Bridge<
   OutgoingEvents: Object,
   IncomingEvents: Object,
-> extends EventEmitter<{
-  ...IncomingEvents,
-  ...OutgoingEvents,
-}> {
+> extends EventEmitter<IncomingEvents> {
   _isShutdown: boolean = false;
   _messageQueue: Array<any> = [];
   _scheduledFlush: boolean = false;

@@ -193,6 +193,11 @@ export type Rect = {
   height: number,
 };
 
+export type SuspenseTimelineStep = {
+  id: SuspenseNode['id'], // TODO: Will become a group.
+  environment: null | string,
+};
+
 export type SuspenseNode = {
   id: Element['id'],
   parentID: SuspenseNode['id'] | 0,
@@ -200,6 +205,8 @@ export type SuspenseNode = {
   name: string | null,
   rects: null | Array<Rect>,
   hasUniqueSuspenders: boolean,
+  isSuspended: boolean,
+  environments: Array<string>,
 };
 
 // Serialized version of ReactIOInfo

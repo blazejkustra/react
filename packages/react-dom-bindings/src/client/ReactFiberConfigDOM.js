@@ -2100,6 +2100,7 @@ export function startViewTransition(
   passiveCallback: () => mixed,
   errorCallback: mixed => void,
   blockedCallback: string => void, // Profiling-only
+  finishedAnimation: () => void, // Profiling-only
 ): null | RunningViewTransition {
   const ownerDocument: Document =
     rootContainer.nodeType === DOCUMENT_NODE
@@ -2278,6 +2279,11 @@ export function startViewTransition(
       spawnedWorkCallback();
     };
     const handleError = (error: mixed) => {
+      // $FlowFixMe[prop-missing]
+      if (ownerDocument.__reactViewTransition === transition) {
+        // $FlowFixMe[prop-missing]
+        ownerDocument.__reactViewTransition = null;
+      }
       try {
         error = customizeViewTransitionError(error, false);
         if (error !== null) {
@@ -2292,6 +2298,9 @@ export function startViewTransition(
         layoutCallback();
         // Skip afterMutationCallback() since we're not animating.
         spawnedWorkCallback();
+        if (enableProfilerTimer) {
+          finishedAnimation();
+        }
       }
     };
     transition.ready.then(readyCallback, handleError);
@@ -2301,6 +2310,9 @@ export function startViewTransition(
       if (ownerDocument.__reactViewTransition === transition) {
         // $FlowFixMe[prop-missing]
         ownerDocument.__reactViewTransition = null;
+      }
+      if (enableProfilerTimer) {
+        finishedAnimation();
       }
       passiveCallback();
     });
@@ -2316,6 +2328,9 @@ export function startViewTransition(
     mutationCallback();
     layoutCallback();
     // Skip afterMutationCallback(). We don't need it since we're not animating.
+    if (enableProfilerTimer) {
+      finishedAnimation();
+    }
     spawnedWorkCallback();
     // Skip passiveCallback(). Spawned work will schedule a task.
     return null;
@@ -2505,6 +2520,7 @@ export function startGestureTransition(
   mutationCallback: () => void,
   animateCallback: () => void,
   errorCallback: mixed => void,
+  finishedAnimation: () => void, // Profiling-only
 ): null | RunningViewTransition {
   const ownerDocument: Document =
     rootContainer.nodeType === DOCUMENT_NODE
@@ -2691,6 +2707,11 @@ export function startGestureTransition(
         ? () => requestAnimationFrame(readyCallback)
         : readyCallback;
     const handleError = (error: mixed) => {
+      // $FlowFixMe[prop-missing]
+      if (ownerDocument.__reactViewTransition === transition) {
+        // $FlowFixMe[prop-missing]
+        ownerDocument.__reactViewTransition = null;
+      }
       try {
         error = customizeViewTransitionError(error, true);
         if (error !== null) {
@@ -2705,6 +2726,9 @@ export function startGestureTransition(
         // Skip readyCallback() and go straight to animateCallbck() since we're not animating.
         // animateCallback() is still required to restore states.
         animateCallback();
+        if (enableProfilerTimer) {
+          finishedAnimation();
+        }
       }
     };
     transition.ready.then(readyForAnimations, handleError);
@@ -2719,6 +2743,12 @@ export function startGestureTransition(
         // $FlowFixMe[prop-missing]
         ownerDocument.__reactViewTransition = null;
       }
+      if (enableProfilerTimer) {
+        // Signal that the Transition was unable to continue. We do that here
+        // instead of when we stop the running View Transition to ensure that
+        // we cover cases when something else stops it early.
+        finishedAnimation();
+      }
     });
     return transition;
   } catch (x) {
@@ -2731,6 +2761,9 @@ export function startGestureTransition(
     // Run through the sequence to put state back into a consistent state.
     mutationCallback();
     animateCallback();
+    if (enableProfilerTimer) {
+      finishedAnimation();
+    }
     return null;
   }
 }
@@ -3308,13 +3341,13 @@ function validateDocumentPositionWithFiberTree(
 
 if (enableFragmentRefsScrollIntoView) {
   // $FlowFixMe[prop-missing]
-  FragmentInstance.prototype.experimental_scrollIntoView = function (
+  FragmentInstance.prototype.scrollIntoView = function (
     this: FragmentInstanceType,
     alignToTop?: boolean,
   ): void {
     if (typeof alignToTop === 'object') {
       throw new Error(
-        'FragmentInstance.experimental_scrollIntoView() does not support ' +
+        'FragmentInstance.scrollIntoView() does not support ' +
           'scrollIntoViewOptions. Use the alignToTop boolean instead.',
       );
     }
@@ -5965,6 +5998,7 @@ export opaque type SuspendedState = {
   imgBytes: number, // number of bytes we estimate needing to download
   suspenseyImages: Array<HTMLImageElement>, // instances of suspensey images (whether loaded or not)
   waitingForImages: boolean, // false when we're no longer blocking on images
+  waitingForViewTransition: boolean,
   unsuspend: null | (() => void),
 };
 
@@ -5976,6 +6010,7 @@ export function startSuspendingCommit(): SuspendedState {
     imgBytes: 0,
     suspenseyImages: [],
     waitingForImages: true,
+    waitingForViewTransition: false,
     // We use a noop function when we begin suspending because if possible we want the
     // waitfor step to finish synchronously. If it doesn't we'll return a function to
     // provide the actual unsuspend function and that will get completed when the count
@@ -6123,6 +6158,7 @@ export function suspendOnActiveViewTransition(
     return;
   }
   state.count++;
+  state.waitingForViewTransition = true;
   const ping = onUnsuspend.bind(state);
   activeViewTransition.finished.then(ping, ping);
 }
@@ -6202,6 +6238,28 @@ export function waitForCommitToBeReady(
         clearTimeout(imgTimer);
       };
     };
+  }
+  return null;
+}
+
+export function getSuspendedCommitReason(
+  state: SuspendedState,
+  rootContainer: Container,
+): null | string {
+  if (state.waitingForViewTransition) {
+    return 'Waiting for the previous Animation';
+  }
+  if (state.count > 0) {
+    if (state.imgCount > 0) {
+      return 'Suspended on CSS and Images';
+    }
+    return 'Suspended on CSS';
+  }
+  if (state.imgCount === 1) {
+    return 'Suspended on an Image';
+  }
+  if (state.imgCount > 0) {
+    return 'Suspended on Images';
   }
   return null;
 }

@@ -1,6 +1,6 @@
 import React, {
-  unstable_addTransitionType as addTransitionType,
-  unstable_ViewTransition as ViewTransition,
+  addTransitionType,
+  ViewTransition,
   Activity,
   useLayoutEffect,
   useEffect,
@@ -238,8 +238,8 @@ export default function Page({url, navigate}) {
                   <Suspend />
                 </div>
               </ViewTransition>
+              {show ? <Component /> : null}
             </Suspense>
-            {show ? <Component /> : null}
           </div>
         </ViewTransition>
       </SwipeRecognizer>
